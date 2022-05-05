@@ -41,7 +41,7 @@ function _M.select(_, rules, context)
       end
 
       if rule.replace_path then
-        upstream:append_path(rule.replace_path:render(context))
+        upstream:append_path(ngx.unescape_uri(rule.replace_path:render(context)))
         -- Set uri as nil if not will be appended to the upstream
         ngx.req.set_uri("/")
       end

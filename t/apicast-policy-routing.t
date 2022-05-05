@@ -2434,7 +2434,7 @@ operations is an empty array instead of nil
               "rules": [
                 {
                   "url": "http://test:$TEST_NGINX_SERVER_PORT/",
-                  "replace_path": "{{uri | remove_first: '/test'}}",
+                  "replace_path": "{{request.request_uri | remove_first: '/test'}}",
                   "condition": {
                     "operations": [
                       {
@@ -2469,7 +2469,7 @@ operations is an empty array instead of nil
 --- request eval
 ["GET /test/foo+foo", "GET /test/foo%2Bfoo", "GET /test/foo%2Ffoo", "GET /test/foo%20foo" ]
 --- response_body eval
-["/foo+foo\n", "/foo+foo\n", "/foo/foo\n", "/foo%20foo\n"]
+["/foo%20foo\n", "/foo+foo\n", "/foo/foo\n", "/foo%20foo\n"]
 --- error_code eval
 [200, 200, 200, 200]
 --- no_error_log

@@ -10,7 +10,8 @@ describe('RoutingOperation', function()
         local operation = RoutingOperation.new_op_with_path('==', path)
 
         local request_with_matching_path = {
-          get_uri = function() return path end
+          get_uri = function() return path end,
+          get_request_uri = function() return path end
         }
 
         local context = { request = request_with_matching_path }
@@ -24,7 +25,8 @@ describe('RoutingOperation', function()
         local operation = RoutingOperation.new_op_with_path('==', path)
 
         local request_with_different_path = {
-          get_uri = function() return path .. 'some_diff' end
+          get_uri = function() return path .. 'some_diff' end,
+          get_request_uri = function() return path .. 'some_diff' end
         }
 
         local context = { request = request_with_different_path }
@@ -247,7 +249,8 @@ describe('RoutingOperation', function()
       )
 
       local request_with_matching_path = {
-        get_uri = function() return path end
+        get_uri = function() return path end,
+        get_request_uri = function() return path end
       }
 
       local context = {

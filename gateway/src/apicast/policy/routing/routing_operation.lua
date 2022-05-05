@@ -25,7 +25,7 @@ local function new(evaluate_left_side_func, op, value, value_type)
 end
 
 function _M.new_op_with_path(op, value, value_type)
-  local eval_left_func = function(context) return context.request:get_uri() end
+  local eval_left_func = function(context) return context.request:get_request_uri() end
   return new(eval_left_func, op, value, value_type)
 end
 

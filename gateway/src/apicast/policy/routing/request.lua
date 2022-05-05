@@ -14,6 +14,12 @@ function _M:get_uri()
   return self.uri
 end
 
+function _M:get_request_uri()
+  --this uses the raw request_uri but strips away the query params
+  self.request_uri = self.request_uri or string.gmatch(ngx.var.request_uri, "([^%?]+)")()
+  return self.request_uri
+end
+
 function _M:get_header(name)
   self.headers = self.headers or ngx.req.get_headers()
   return self.headers[name]
