@@ -1,3 +1,67 @@
+FROM registry.access.redhat.com/ubi8:8.5 AS opentelemetry-builder
+
+ARG OPENRESTY_RPM_VERSION="1.19.3"
+
+RUN sed -i s/enabled=./enabled=0/g /etc/yum/pluginconf.d/subscription-manager.conf
+
+RUN yum install -y pcre-devel zlib-devel libcurl-devel cmake gcc gcc-c++ git
+
+WORKDIR /tmp
+
+RUN git clone --shallow-submodules --depth 1 --recurse-submodules -b v1.36.4 \
+  https://github.com/grpc/grpc \
+  && cd grpc \
+  && mkdir -p cmake/build \
+  && cd cmake/build \
+  && cmake \
+    -DgRPC_INSTALL=ON \
+    -DgRPC_BUILD_TESTS=OFF \
+    -DCMAKE_INSTALL_PREFIX=/install \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DgRPC_BUILD_GRPC_NODE_PLUGIN=OFF \
+    -DgRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN=OFF \
+    -DgRPC_BUILD_GRPC_PHP_PLUGIN=OFF \
+    -DgRPC_BUILD_GRPC_PHP_PLUGIN=OFF \
+    -DgRPC_BUILD_GRPC_PYTHON_PLUGIN=OFF \
+    -DgRPC_BUILD_GRPC_RUBY_PLUGIN=OFF \
+    ../.. \
+  && make -j8 VERBOSE=1 \
+  && make install
+
+RUN git clone --shallow-submodules --depth 1 --recurse-submodules -b v1.6.1 \
+  https://github.com/open-telemetry/opentelemetry-cpp.git \
+  && cd opentelemetry-cpp \
+  && mkdir build \
+  && cd build \
+  && cmake -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/install \
+    -DCMAKE_PREFIX_PATH=/install \
+    -DWITH_OTLP=ON \
+    -DWITH_OTLP_GRPC=ON \
+    -DWITH_OTLP_HTTP=OFF \
+    -DBUILD_TESTING=OFF \
+    -DWITH_EXAMPLES=OFF \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    .. \
+  && make -j8 VERBOSE=1 \
+  && make install
+
+ADD https://github.com/open-telemetry/opentelemetry-cpp-contrib/archive/refs/tags/webserver/v1.0.1.tar.gz ./
+
+RUN tar -xzvf v1.0.1.tar.gz && rm v1.0.1.tar.gz
+
+RUN mkdir -p otel-nginx/build && mkdir -p otel-nginx/src
+RUN cp -r /tmp/opentelemetry-cpp-contrib-webserver-v1.0.1/instrumentation/nginx/src otel-nginx/
+RUN cp /tmp/opentelemetry-cpp-contrib-webserver-v1.0.1/instrumentation/nginx/CMakeLists.txt /tmp/opentelemetry-cpp-contrib-webserver-v1.0.1/instrumentation/nginx/nginx.cmake otel-nginx/
+RUN cd otel-nginx/build \
+  && cmake -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_PREFIX_PATH=/install \
+    -DCMAKE_INSTALL_PREFIX=/usr/share/nginx/modules \
+    -DNGINX_VERSION=1.19.3 \
+    .. \
+  && make -j8 VERBOSE=1 \
+  && make install
+
 FROM registry.access.redhat.com/ubi8:8.5
 
 ARG OPENRESTY_RPM_VERSION="1.19.3"
@@ -37,6 +101,8 @@ ENV PATH="./lua_modules/bin:/usr/local/openresty/luajit/bin/:${PATH}" \
     LUA_PATH="./lua_modules/share/lua/5.1/?.lua;./lua_modules/share/lua/5.1/?/init.lua;/usr/lib64/lua/5.1/?.lua;/usr/share/lua/5.1/?.lua" \
     LUA_CPATH="./lua_modules/lib/lua/5.1/?.so;;" \
     LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/opt/app-root/lib"
+
+COPY --from=opentelemetry-builder /usr/share/nginx/modules/otel_ngx_module.so /usr/local/openresty/nginx/modules
 
 RUN luarocks install --deps-mode=none --tree /usr/local https://luarocks.org/manifests/pintsized/lua-resty-http-0.15-0.src.rock
 RUN luarocks install --deps-mode=none --tree /usr/local https://luarocks.org/manifests/kikito/router-2.1-0.src.rock

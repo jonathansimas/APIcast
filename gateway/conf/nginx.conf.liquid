@@ -15,6 +15,16 @@ load_module {{file}};
   {% endif %}
 {% endif %}
 
+{% if opentelemetry != empty %}
+  {% for file in "modules/otel_ngx_module.so" | filesystem %}
+load_module {{file}};
+  {% endfor %}
+{% else %}
+  {% if timer_resolution %}
+    timer_resolution {{ timer_resolution }};
+  {% endif %}
+{% endif %}
+
 daemon {{ daemon | default: 'off' }};
 master_process {{ master_process | default: 'on' }};
 worker_processes {{ worker_processes | default: 'auto' }};
@@ -79,6 +89,11 @@ http {
   {% if opentracing_tracer != empty %}
     {%- capture tracer_conf %}conf.d/opentracing/{{ opentracing_tracer }}.conf.liquid{%- endcapture -%}
     {% include tracer_conf %}
+  {% endif %}
+
+  {% if opentelemetry != empty %}
+    {%- capture otel_conf %}conf.d/opentelemetry/otel.conf.liquid{%- endcapture -%}
+    {% include otel_conf %}
   {% endif %}
 
   {% for file in template | default: 'http.d/apicast.conf.liquid' | filesystem %}
