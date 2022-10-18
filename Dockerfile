@@ -1,67 +1,3 @@
-FROM registry.access.redhat.com/ubi8:8.5 AS opentelemetry-builder
-
-ARG OPENRESTY_RPM_VERSION="1.19.3"
-
-RUN sed -i s/enabled=./enabled=0/g /etc/yum/pluginconf.d/subscription-manager.conf
-
-RUN yum install -y pcre-devel zlib-devel libcurl-devel cmake gcc gcc-c++ git
-
-WORKDIR /tmp
-
-RUN git clone --shallow-submodules --depth 1 --recurse-submodules -b v1.36.4 \
-  https://github.com/grpc/grpc \
-  && cd grpc \
-  && mkdir -p cmake/build \
-  && cd cmake/build \
-  && cmake \
-    -DgRPC_INSTALL=ON \
-    -DgRPC_BUILD_TESTS=OFF \
-    -DCMAKE_INSTALL_PREFIX=/install \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DgRPC_BUILD_GRPC_NODE_PLUGIN=OFF \
-    -DgRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN=OFF \
-    -DgRPC_BUILD_GRPC_PHP_PLUGIN=OFF \
-    -DgRPC_BUILD_GRPC_PHP_PLUGIN=OFF \
-    -DgRPC_BUILD_GRPC_PYTHON_PLUGIN=OFF \
-    -DgRPC_BUILD_GRPC_RUBY_PLUGIN=OFF \
-    ../.. \
-  && make -j2 \
-  && make install
-
-RUN git clone --shallow-submodules --depth 1 --recurse-submodules -b v1.6.1 \
-  https://github.com/open-telemetry/opentelemetry-cpp.git \
-  && cd opentelemetry-cpp \
-  && mkdir build \
-  && cd build \
-  && cmake -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=/install \
-    -DCMAKE_PREFIX_PATH=/install \
-    -DWITH_OTLP=ON \
-    -DWITH_OTLP_GRPC=ON \
-    -DWITH_OTLP_HTTP=OFF \
-    -DBUILD_TESTING=OFF \
-    -DWITH_EXAMPLES=OFF \
-    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-    .. \
-  && make -j2 \
-  && make install
-
-ADD https://github.com/open-telemetry/opentelemetry-cpp-contrib/archive/refs/tags/webserver/v1.0.1.tar.gz ./
-
-RUN tar -xzvf v1.0.1.tar.gz && rm v1.0.1.tar.gz
-
-RUN mkdir -p otel-nginx/build && mkdir -p otel-nginx/src
-RUN cp -r /tmp/opentelemetry-cpp-contrib-webserver-v1.0.1/instrumentation/nginx/src otel-nginx/
-RUN cp /tmp/opentelemetry-cpp-contrib-webserver-v1.0.1/instrumentation/nginx/CMakeLists.txt /tmp/opentelemetry-cpp-contrib-webserver-v1.0.1/instrumentation/nginx/nginx.cmake otel-nginx/
-RUN cd otel-nginx/build \
-  && cmake -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_PREFIX_PATH=/install \
-    -DCMAKE_INSTALL_PREFIX=/usr/share/nginx/modules \
-    -DNGINX_VERSION=1.19.3 \
-    .. \
-  && make -j2 \
-  && make install
-
 FROM registry.access.redhat.com/ubi8:8.5
 
 ARG OPENRESTY_RPM_VERSION="1.19.3"
@@ -82,16 +18,22 @@ ENV AUTO_UPDATE_INTERVAL=0 \
     PATH=/opt/app-root/src/bin:/opt/app-root/bin:$PATH \
     PLATFORM="el8"
 
-RUN sed -i s/enabled=./enabled=0/g /etc/yum/pluginconf.d/subscription-manager.conf
+#RUN sed -i s/enabled=./enabled=0/g /etc/yum/pluginconf.d/subscription-manager.conf
 
 RUN dnf install -y 'dnf-command(config-manager)'
 
 RUN yum config-manager --add-repo http://packages.dev.3sca.net/dev_packages_3sca_net.repo
 
-RUN PKGS="perl-interpreter-5.26.3 libyaml-devel-0.1.7 m4 openssl-devel git gcc make curl openresty-resty-${OPENRESTY_RPM_VERSION} luarocks-2.3.0 opentracing-cpp-devel-1.3.0 libopentracing-cpp1-1.3.0 jaegertracing-cpp-client openresty-opentracing-${OPENRESTY_RPM_VERSION}" && \
+RUN PKGS="perl-interpreter-5.26.3 libyaml-devel-0.1.7 m4 openssl-devel git gcc make curl luarocks-2.3.0 opentracing-cpp-devel-1.3.0 libopentracing-cpp1-1.3.0 jaegertracing-cpp-client" && \
     mkdir -p "$HOME" && \
     yum -y --setopt=tsflags=nodocs install $PKGS && \
     rpm -V $PKGS && \
+    yum clean all -y
+
+ADD rpms /opt/app-root/rpms
+
+RUN PKGS="/opt/app-root/rpms/openresty-resty-1.19.3-18.el8.noarch.rpm /opt/app-root/rpms/openresty-opm-1.19.3-18.el8.noarch.rpm /opt/app-root/rpms/openresty-opentelemetry-1.19.3-18.el8.x86_64.rpm /opt/app-root/rpms/openresty-opentracing-1.19.3-18.el8.x86_64.rpm /opt/app-root/rpms/openresty-1.19.3-18.el8.x86_64.rpm" && \
+    yum -y --setopt=tsflags=nodocs localinstall $PKGS && \
     yum clean all -y
 
 COPY site_config.lua /usr/share/lua/5.1/luarocks/site_config.lua
@@ -101,8 +43,6 @@ ENV PATH="./lua_modules/bin:/usr/local/openresty/luajit/bin/:${PATH}" \
     LUA_PATH="./lua_modules/share/lua/5.1/?.lua;./lua_modules/share/lua/5.1/?/init.lua;/usr/lib64/lua/5.1/?.lua;/usr/share/lua/5.1/?.lua" \
     LUA_CPATH="./lua_modules/lib/lua/5.1/?.so;;" \
     LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/opt/app-root/lib"
-
-COPY --from=opentelemetry-builder /usr/share/nginx/modules/otel_ngx_module.so /usr/local/openresty/nginx/modules
 
 RUN luarocks install --deps-mode=none --tree /usr/local https://luarocks.org/manifests/pintsized/lua-resty-http-0.15-0.src.rock
 RUN luarocks install --deps-mode=none --tree /usr/local https://luarocks.org/manifests/kikito/router-2.1-0.src.rock
